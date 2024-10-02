@@ -1,4 +1,5 @@
-# Turning Elena's bad practices into hopefully productive feedback
+# Turning Elena's bad practices into hopefully productive feedback 
+## (Feedback on the DAGCircuit Rust interface)
 
 ## Example 1
 
@@ -78,6 +79,54 @@ for out_node in synth_dag.topological_op_nodes()? {
 
 ## Example 2
 
+**Task:** append an instruction from dag1 into dag2, which is an empty copy of dag1.
+
+**Naive approach:** expose `push_back` to be able to do the operation in one line. Downside: these shouldn't be exposed.
+
+**Approach respecting internals:** use `apply_operation_back`. Same downsides as example 1. 
+
+**A probably better approach:** ?
+
+<table>
+<tr>
+<th>Exposing Internals</th>
+<th>Respecting Internals</th>
+</tr>
+<tr>
+<td>
+  
+```rust
+out_dag.push_back(py, packed_instr.clone())?;
+```
+  
+</td>
+<td>
+
+```rust
+let qargs = dag.get_qargs(packed_instr.qubits);
+let cargs = dag.get_cargs(packed_instr.clbits);
+let params = packed_instr
+    .params_view()
+    .iter()
+    .map(|param| param.clone_ref(py))
+    .collect();
+out_dag.apply_operation_back(
+    py,
+    packed_instr.op.clone(),
+    qargs,
+    cargs,
+    Some(params),
+    packed_instr.extra_attrs.clone(),
+    #[cfg(feature = "cache_pygates")]
+    packed_instr.py_op.clone(),
+)?;
+```
+</td>
+</tr>
+</table>
+
+## Example 3
+
 **Task:** create an iterable of `PackedInstruction`s and append them to an empty dag using `extend`
 
 **Naive approach:** expose `qargs_interner` to create the `PackedInstruction`s. Downside: these shouldn't be exposed.
@@ -99,35 +148,57 @@ for out_node in synth_dag.topological_op_nodes()? {
 
 ```rust
 let mut instructions = Vec::new();
-    for (gate, params, qubit_ids) in &sequence.gate_sequence.gates {
-        let gate_node = match gate {
-            None => sequence.decomp_gate.operation.standard_gate(),
-            Some(gate) => *gate,
-        };
-        let mapped_qargs: Vec<Qubit> = qubit_ids.iter().map(|id| out_qargs[*id as usize]).collect();
-        let new_params: Option<Box<SmallVec<[Param; 3]>>> = match gate {
-            Some(_) => Some(Box::new(params.iter().map(|p| Param::Float(*p)).collect())),
-            None => Some(Box::new(sequence.decomp_gate.params.clone())),
-        };
-        let instruction = PackedInstruction {
-            op: PackedOperation::from_standard(gate_node),
-            qubits: out_dag.qargs_interner.insert(&mapped_qargs),
-            clbits: out_dag.cargs_interner.get_default(),
-            params: new_params,
-            extra_attrs: ExtraInstructionAttributes::new(None, None, None, None),
-            #[cfg(feature = "cache_pygates")]
-            py_op: OnceCell::new(),
-        };
-        instructions.push(instruction);
-    }
-    out_dag.extend(py, instructions.into_iter())?;
+for (gate, params, qubit_ids) in &sequence.gate_sequence.gates {
+    let gate_node = match gate {
+        None => sequence.decomp_gate.operation.standard_gate(),
+        Some(gate) => *gate,
+    };
+    let mapped_qargs: Vec<Qubit> = qubit_ids.iter().map(|id| out_qargs[*id as usize]).collect();
+    let new_params: Option<Box<SmallVec<[Param; 3]>>> = match gate {
+        Some(_) => Some(Box::new(params.iter().map(|p| Param::Float(*p)).collect())),
+        None => Some(Box::new(sequence.decomp_gate.params.clone())),
+    };
+    let instruction = PackedInstruction {
+        op: PackedOperation::from_standard(gate_node),
+        qubits: out_dag.qargs_interner.insert(&mapped_qargs),
+        clbits: out_dag.cargs_interner.get_default(),
+        params: new_params,
+        extra_attrs: ExtraInstructionAttributes::new(None, None, None, None),
+        #[cfg(feature = "cache_pygates")]
+        py_op: OnceCell::new(),
+    };
+    instructions.push(instruction);
+}
+out_dag.extend(py, instructions.into_iter())?;
 ```
   
 </td>
 <td>
 
 ```rust
-TODO
+let mut op_attributes = Vec::new();
+for (gate, params, qubit_ids) in sequence.gate_sequence.gates.clone() {
+    let gate_node = match gate {
+        None => sequence.decomp_gate.operation.standard_gate(),
+        Some(gate) => *gate,
+    };
+    let mapped_qargs: Vec<Qubit> = qubit_ids.iter().map(|id| out_qargs[*id as usize]).collect();
+    let new_params: Option<Box<SmallVec<[Param; 3]>>> = match gate {
+        Some(_) => Some(Box::new(params.iter().map(|p| Param::Float(*p)).collect())),
+        None => Some(Box::new(sequence.decomp_gate.params.clone())),
+    };
+    let attributes = (
+        PackedOperation::from_standard(gate_node),
+        mapped_qargs,
+        [],
+        new_params,
+        xtraInstructionAttributes::new(None, None, None, None),
+        #[cfg(feature = "cache_pygates")]
+        OnceCell::new(),
+    )
+    op_attributes.push(attributes);
+}
+out_dag.extend_from_packed_operations(py, op_attributes.into_iter())?;
 ```
 </td>
 </tr>
