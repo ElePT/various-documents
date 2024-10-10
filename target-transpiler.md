@@ -71,6 +71,7 @@ Because the arguments overlap, there are **documented** priority rules:
 3. `instruction_durations is not None` -> we don't have a good way to set priorities with other constraints
 4. a custom basis gate is found in `basis_gates` -> we don't know the definition
 
+More specific edge cases documented in: https://github.com/Qiskit/qiskit/pull/12185#issue-2245476872
 
 **The situations are very common in our unit tests (~500 tests), documentation and learning material.** 
 
@@ -79,15 +80,14 @@ Because the arguments overlap, there are **documented** priority rules:
 ### 1. We error. Certain input combinations are not allowed.
 
 - Important breaking change in interface
-- Very difficult to justify ("Why can't I just give a coupling map?" "because the target doesn't allow it" "But why?")
-- If the goal is to get rid of loose constraints, we will have to:
-    1. deprecate certain combinations
-    2. deprecate the constraints
-
+- Very difficult to justify (+"Why can't I just give a coupling map?" -"Because the target doesn't allow it" +"But why?")
+- If the goal is to get rid of loose constraints in the present PM, we will have to make users follow 2 deprecations:
+    1. deprecating certain combinations of inputs
+    2. deprecating all loose constraint inputs in favor of the target
 
 Comments: 
 
-- Why make users go through 2 deprecations, one of them very difficult to justify for people not familiar with the target model? It might be better to just deprecate the constraints directly, but:
+- I would try to avoid making users go through 2 deprecations. If the goal is to ultimately only use targets, it might be better to just deprecate all loose constraints directly.
 
 - I think this breaking change can have a very negative perception among our users. Both internal and external. People are very used to loose constraints and don't want to have to generate additional information they don't care about. I don't see any positive side from the user perspective. More work, less convenience, same output.
 
@@ -97,5 +97,4 @@ Comments:
 For this strategy, we can maintain the current interface, but need to find a way to build a target internally either:
 
 1. Coming up with defaults --> also a change in behavior
-2. Creating a `TranspilationTarget` subclass that allows these impossible combinations and recreates the current behavior. Feasibility to be discussed.
-
+2. Creating a `TranspilationTarget` subclass that allows these impossible combinations and recreates the current behavior. It would be important to take into account transpiler passes that have a target-aware behavior and a non-target-aware behavior (example: HLS or unitary synthesis). We might have to tailor them to treat this `TranspilationTarget` as a "non-target".
